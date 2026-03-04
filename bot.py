@@ -43,10 +43,13 @@ def resim_bul(haber):
 async def botu_calistir():
     bot = Bot(token=TOKEN)
     
-    # Hafızayı oku
+    # Hafızayı oku (Daha güvenli yöntem)
     if os.path.exists(HAFIZA_DOSYASI):
-        with open(HAFIZA_DOSYASI, "r", encoding="utf-8") as f:
-            gonderilenler = f.read().splitlines()
+        try:
+            with open(HAFIZA_DOSYASI, "r", encoding="utf-8") as f:
+                gonderilenler = f.read().splitlines()
+        except:
+            gonderilenler = []
     else:
         gonderilenler = []
 

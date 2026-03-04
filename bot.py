@@ -93,4 +93,5 @@ async def botu_calistir():
     print("🏁 İşlem tamamlandı.")
 
 # Çalıştırma komutu
-await botu_calistir()
+if __name__ == "__main__":
+    asyncio.run(botu_calistir())

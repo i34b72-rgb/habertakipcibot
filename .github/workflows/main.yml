@@ -1,0 +1,22 @@
+name: Haber_Botu_Otomasyon
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # Her 15 dakikada bir çalıştır
+  workflow_dispatch:        # Elle çalıştırma butonu ekler
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodları indir
+        uses: actions/checkout@v3
+      - name: Python kur
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Gerekli araçları yükle
+        run: pip install feedparser python-telegram-bot
+      - name: Botu calistir
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        run: python bot.py

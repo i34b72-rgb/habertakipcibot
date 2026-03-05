@@ -4,14 +4,11 @@ import os
 import re
 from telegram import Bot
 
-# --- GÜVENLİK VE AYARLAR ---
-# GitHub'a yüklerken bunları 'Secrets' kısmına taşıyacağız. 
-# Şimdilik test için buraya yazabilirsin.
+# --- GÜVENLİK ---
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
-MY_ID = 12345678 # Kendi ID numaranı yaz
+MY_ID = 12345678  # Kendi ID'ni buraya yaz
 HAFIZA_DOSYASI = "hafiza.txt"
 
-# Kaynak Listesi (Hepsini tek bir standartta topladık)
 KAYNAKLAR = {
     "BBC TÜRKÇE": "https://feeds.bbci.co.uk/turkce/rss.xml",
     "GOOGLE SON DAKİKA": "https://news.google.com/rss/search?q=when:1d&hl=tr&gl=TR&ceid=TR:tr",
@@ -23,74 +20,68 @@ KAYNAKLAR = {
 }
 
 def resim_bul(haber):
-    """Farklı sitelerden en kaliteli resmi bulur."""
-    resim = None
-    # 1. Standart medya etiketi
-    if 'media_content' in haber:
-        resim = haber.media_content[0]['url']
-    # 2. Linkler içindeki resim tipi
-    elif 'links' in haber:
+    if 'media_content' in haber: return haber.media_content[0]['url']
+    if 'links' in haber:
         for link in haber.links:
-            if 'image' in link.get('type', ''):
-                resim = link.get('href')
-    # 3. Metin içindeki gizli img etiketi (Regex ile)
-    if not resim and 'summary' in haber:
+            if 'image' in link.get('type', ''): return link.get('href')
+    if 'summary' in haber:
         bulunan = re.search(r'<img [^>]*src="([^"]+)"', haber.summary)
-        if bulunan:
-            resim = bulunan.group(1)
-    return resim
+        if bulunan: return bulunan.group(1)
+    return None
+
+async def haber_cek_ve_gonder(bot, ad, url, gonderilenler):
+    """Tek bir kaynağı tarar ve yeni haber varsa gönderir."""
+    try:
+        # Haberi çekme işlemini hızlandırmak için döngüden çıkardık
+        loop = asyncio.get_event_loop()
+        besleme = await loop.run_in_executor(None, feedparser.parse, url)
+        
+        if not besleme.entries: return
+
+        haber = besleme.entries[0]
+        if haber.title not in gonderilenler:
+            resim_url = resim_bul(haber)
+            mesaj = (f"<b>📰 {ad} | SON DAKİKA</b>\n\n"
+                     f"🔥 {haber.title}\n\n"
+                     f"🔗 <a href='{haber.link}'>Haberin Devamı</a>")
+
+            if resim_url:
+                await bot.send_photo(chat_id=MY_ID, photo=resim_url, caption=mesaj, parse_mode='HTML')
+            else:
+                await bot.send_message(chat_id=MY_ID, text=f"✨ {mesaj}", parse_mode='HTML')
+            
+            return haber.title # Yeni gönderilen haberi geri döndür
+    except Exception as e:
+        print(f"Hata ({ad}): {e}")
+    return None
 
 async def botu_calistir():
     bot = Bot(token=TOKEN)
     
-    # Hafızayı oku (Daha güvenli yöntem)
+    # Hafızayı oku
     if os.path.exists(HAFIZA_DOSYASI):
-        try:
-            with open(HAFIZA_DOSYASI, "r", encoding="utf-8") as f:
-                gonderilenler = f.read().splitlines()
-        except:
-            gonderilenler = []
+        with open(HAFIZA_DOSYASI, "r", encoding="utf-8") as f:
+            gonderilenler = f.read().splitlines()
     else:
         gonderilenler = []
 
-    print("🚀 Tarama başlatıldı...")
-
-    for ad, url in KAYNAKLAR.items():
-        try:
-            besleme = feedparser.parse(url)
-            # Her kaynaktan sadece en yeni haberi kontrol et (Hız ve temizlik için)
-            if not besleme.entries: continue
-            
-            haber = besleme.entries[0]
-            
-            # Eğer haber daha önce gönderilmediyse
-            if haber.title not in gonderilenler:
-                resim_url = resim_bul(haber)
-                mesaj = (f"<b>📰 {ad} | SON DAKİKA</b>\n\n"
-                         f"🔥 {haber.title}\n\n"
-                         f"🔗 <a href='{haber.link}'>Haberin Devamı</a>")
-
-                try:
-                    if resim_url:
-                        await bot.send_photo(chat_id=MY_ID, photo=resim_url, caption=mesaj, parse_mode='HTML')
-                    else:
-                        await bot.send_message(chat_id=MY_ID, text=f"✨ {mesaj}", parse_mode='HTML')
-                    
-                    gonderilenler.append(haber.title)
-                    print(f"✅ Gönderildi: {ad}")
-                except Exception as e:
-                    print(f"⚠️ Mesaj hatası ({ad}): {e}")
-                
-                await asyncio.sleep(2) # Telegram engeline takılmamak için bekleme
-
-        except Exception as e:
-            print(f"❌ Kaynak hatası ({ad}): {e}")
-
-    # Hafızayı güncelle (Son 50 haberi tut)
-    with open(HAFIZA_DOSYASI, "w", encoding="utf-8") as f:
-        f.write("\n".join(gonderilenler[-50:]))
+    # --- PARALEL ÇALIŞMA MANTIĞI ---
+    # Tüm kaynaklar için görevleri (tasks) oluşturuyoruz
+    gorevler = [haber_cek_ve_gonder(bot, ad, url, gonderilenler) for ad, url in KAYNAKLAR.items()]
     
-    print("🏁 İşlem tamamlandı.")
+    # Tüm görevleri AYNI ANDA başlatıyoruz
+    sonuclar = await asyncio.gather(*gorevler)
+
+    # Yeni gönderilen haberleri listeye ekle
+    yeni_haberler = [s for s in sonuclar if s is not None]
+    gonderilenler.extend(yeni_haberler)
+
+    # Hafızayı güncelle
+    with open(HAFIZA_DOSYASI, "w", encoding="utf-8") as f:
+        f.write("\n".join(gonderilenler[-100:]))
+
+if __name__ == "__main__":
+    asyncio.run(botu_calistir())
 
 # Çalıştırma komutu
 if __name__ == "__main__":

@@ -1,21 +1,25 @@
 name: Haber_Botu_Otomasyon
 on:
   schedule:
-    - cron: '*/15 * * * *'  # Her 15 dakikada bir çalıştır
-  workflow_dispatch:        # Elle çalıştırma butonu ekler
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Kodları indir
+      - name: Kodlari indir
         uses: actions/checkout@v3
+
       - name: Python kur
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-      - name: Gerekli araçları yükle
-        run: pip install feedparser python-telegram-bot
+          cache: 'pip' # <--- İŞTE BU! Python'a "Kütüphaneleri dosyada sakla" dedik.
+
+      - name: Kutuphaneleri yukle
+        run: pip install -r requirements.txt
+
       - name: Botu calistir
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
